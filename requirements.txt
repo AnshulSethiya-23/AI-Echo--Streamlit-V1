@@ -1,30 +1,30 @@
 # ── Core dashboard ─────────────────────────────────────────────────────────────
-streamlit==1.45.1
-plotly==5.24.1
-pandas==2.2.3
-pyarrow==18.1.0
-pyyaml==6.0.2
-python-dotenv==1.1.0
+streamlit
+plotly
+pandas
+pyarrow
+pyyaml
+python-dotenv
 
 # ── Google Cloud / BigQuery ─────────────────────────────────────────────────────
-google-cloud-bigquery==3.30.0
-google-cloud-bigquery-storage==2.27.1
-google-auth==2.38.0
-db-dtypes==1.4.1
+google-cloud-bigquery
+google-cloud-bigquery-storage
+google-auth
+db-dtypes
 
 # ── Streamlit extras ────────────────────────────────────────────────────────────
-streamlit-extras==0.4.7
+streamlit-extras
 
 # ── Forecasting ─────────────────────────────────────────────────────────────────
 # Prophet: local fallback backend
 # Requires gcc / g++ / python3-dev — installed in Dockerfile via build-essential
-prophet==1.1.6
+prophet
 # Vertex AI — needed for TimesFM backend (FORECAST_BACKEND=timesfm)
 # and for Gemini-powered insights + chatbot
-google-cloud-aiplatform==1.87.0
+google-cloud-aiplatform
 
 # ── Google ADK (chatbot agent) ──────────────────────────────────────────────────
-google-adk==1.3.0
+google-adk
 
 # ── Google Analytics 4 (tab is work in progress — tab activates once access is confirmed) ──
 google-analytics-data==0.18.14
