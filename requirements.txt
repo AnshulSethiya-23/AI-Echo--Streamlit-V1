@@ -27,5 +27,5 @@ google-cloud-aiplatform
 google-adk
 
 # ── Google Analytics 4 (tab is work in progress — tab activates once access is confirmed) ──
-google-analytics-data==0.18.14
-google-analytics-admin==0.22.12
+google-analytics-data
+google-analytics-admin
