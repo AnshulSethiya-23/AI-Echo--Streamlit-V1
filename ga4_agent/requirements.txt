@@ -1,0 +1,9 @@
+google-adk
+google-analytics-data>=0.18.0
+google-analytics-admin>=0.22.0
+google-auth
+google-auth-oauthlib
+python-dotenv
+pandas
+streamlit
+plotly

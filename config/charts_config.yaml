@@ -1,0 +1,942 @@
+# =============================================================================
+# BROOKFIELD DASHBOARD V2 — SQL MAPPING CONFIG
+# =============================================================================
+# project  = funnel-data          (set in .env as GCP_PROJECT_ID)
+# dataset  = brookfield_dashboard  (set in .env as BQ_DATASET)
+#
+# Real tables:
+#   Brookfield_1H_Executive_Summary_   — all channels combined
+#   Brookfield_1H_Search               — Google Ads + Bing
+#   Brookfield_1H_Social               — Meta + LinkedIn
+#   Brookfield_1H_Programmatic         — DV360 programmatic
+#
+# Column notes:
+#   Date column  → Date  (DATETIME — always wrap in DATE())
+#   Cost column  → Cost  (aliased as "spend" in queries below)
+#
+# chart_type values:
+#   scorecard   → st.metric KPI card
+#   line        → Plotly Scatter (lines+markers)
+#   area        → Plotly Scatter (fill to zero)
+#   bar         → Plotly Bar (grouped)
+#   grouped_bar → alias for bar
+#   stacked_bar → Plotly Bar (stacked)
+#   pie         → Plotly Pie / donut
+#   table       → st.dataframe summary table
+# =============================================================================
+
+charts:
+
+  # ============================================================================
+  # EXECUTIVE SUMMARY
+  # ============================================================================
+
+  # ── Scorecards ───────────────────────────────────────────────────────────────
+
+  - id: exec_total_impressions
+    tab: exec_summary
+    title: "Total Impressions"
+    chart_type: scorecard
+    metric_col: impressions
+    sql: |
+      SELECT SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+
+  - id: exec_total_clicks
+    tab: exec_summary
+    title: "Total Clicks"
+    chart_type: scorecard
+    metric_col: clicks
+    sql: |
+      SELECT SUM(Clicks) AS clicks
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+
+  - id: exec_total_spend
+    tab: exec_summary
+    title: "Total Spend"
+    chart_type: scorecard
+    metric_col: spend
+    format: currency
+    sql: |
+      SELECT ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+
+  - id: exec_overall_ctr
+    tab: exec_summary
+    title: "Overall CTR"
+    chart_type: scorecard
+    metric_col: ctr
+    format: percent
+    sql: |
+      SELECT ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+
+  - id: exec_avg_cpc
+    tab: exec_summary
+    title: "Avg CPC"
+    chart_type: scorecard
+    metric_col: avg_cpc
+    format: currency
+    sql: |
+      SELECT ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS avg_cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+
+  # ── Trend charts ─────────────────────────────────────────────────────────────
+
+  - id: exec_impressions_trend
+    tab: exec_summary
+    title: "Impressions Trend (All Channels)"
+    chart_type: line
+    x_col: date
+    y_cols: [impressions]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: exec_spend_trend
+    tab: exec_summary
+    title: "Spend Over Time"
+    chart_type: area
+    x_col: date
+    y_cols: [spend]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: exec_ctr_trend
+    tab: exec_summary
+    title: "CTR Trend (All Channels)"
+    chart_type: line
+    x_col: date
+    y_cols: [ctr]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: exec_clicks_trend
+    tab: exec_summary
+    title: "Clicks Trend (All Channels)"
+    chart_type: line
+    x_col: date
+    y_cols: [clicks]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        SUM(Clicks) AS clicks
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  # ── Distribution charts ───────────────────────────────────────────────────────
+
+  - id: exec_spend_by_channel
+    tab: exec_summary
+    title: "Spend by Channel"
+    chart_type: pie
+    label_col: channel
+    value_col: spend
+    sql: |
+      SELECT
+        Channel AS channel,
+        ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+      GROUP BY Channel
+      ORDER BY spend DESC
+
+  - id: exec_clicks_by_channel
+    tab: exec_summary
+    title: "Clicks by Channel"
+    chart_type: bar
+    x_col: channel
+    y_cols: [clicks]
+    sql: |
+      SELECT
+        Channel AS channel,
+        SUM(Clicks) AS clicks
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+      GROUP BY Channel
+      ORDER BY clicks DESC
+
+  # ── Multi-metric trend (for interactive dual-axis chart) ─────────────────────
+
+  - id: exec_multi_metric_trend
+    tab: exec_summary
+    title: "Multi-Metric Trend"
+    chart_type: _internal
+    x_col: date
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SUM(Cost), 2)                                                AS spend,
+        SUM(Clicks)                                                         AS clicks,
+        SUM(Impressions)                                                    AS impressions,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 4)         AS ctr,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 4)                      AS cpc,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Impressions)) * 1000, 4)          AS cpm
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  # ── Summary table ─────────────────────────────────────────────────────────────
+
+  - id: exec_channel_table
+    tab: exec_summary
+    title: "Performance by Channel"
+    chart_type: table
+    column_formats:
+      spend: currency
+      ctr: percent
+      cpc: currency
+      impressions: number
+      clicks: number
+    sql: |
+      SELECT
+        Channel AS channel,
+        SUM(Impressions) AS impressions,
+        SUM(Clicks) AS clicks,
+        ROUND(SUM(Cost), 2) AS spend,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Executive_Summary_`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+      GROUP BY Channel
+      ORDER BY spend DESC
+
+  - id: exec_campaign_table
+    tab: exec_summary
+    title: "Campaign Performance (All Channels)"
+    chart_type: table
+    column_formats:
+      spend: currency
+      ctr: percent
+      avg_cpc: currency
+      impressions: number
+      clicks: number
+    sql: |
+      SELECT
+        'Search' AS channel,
+        Campaign_New AS campaign,
+        SUM(Impressions) AS impressions,
+        SUM(Clicks) AS clicks,
+        ROUND(SUM(Cost), 2) AS spend,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS avg_cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+      GROUP BY Campaign_New
+      UNION ALL
+      SELECT
+        'Social' AS channel,
+        Data_Source_name AS campaign,
+        SUM(Impressions) AS impressions,
+        SUM(Clicks) AS clicks,
+        ROUND(SUM(Cost), 2) AS spend,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS avg_cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+      GROUP BY Data_Source_name
+      ORDER BY spend DESC
+      LIMIT 30
+
+
+  # ============================================================================
+  # SEARCH
+  # Filter: Data_Source_name IN ('2026 - Corporate Brand Campaign - Keyword',
+  #                              'Brookfield Brand Campaign - Search keyword')
+  # ============================================================================
+
+  # ── Scorecards ───────────────────────────────────────────────────────────────
+
+  - id: search_impressions
+    tab: search
+    title: "Search Impressions"
+    chart_type: scorecard
+    metric_col: impressions
+    sql: |
+      SELECT SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+
+  - id: search_clicks
+    tab: search
+    title: "Search Clicks"
+    chart_type: scorecard
+    metric_col: clicks
+    sql: |
+      SELECT SUM(Clicks) AS clicks
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+
+  - id: search_ctr
+    tab: search
+    title: "Search CTR"
+    chart_type: scorecard
+    metric_col: ctr
+    format: percent
+    sql: |
+      SELECT ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+
+  - id: search_avg_cpc
+    tab: search
+    title: "Avg CPC"
+    chart_type: scorecard
+    metric_col: avg_cpc
+    format: currency
+    sql: |
+      SELECT ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS avg_cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+
+  - id: search_total_spend
+    tab: search
+    title: "Search Spend"
+    chart_type: scorecard
+    metric_col: spend
+    format: currency
+    sql: |
+      SELECT ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+
+  # ── Trend charts ─────────────────────────────────────────────────────────────
+
+  - id: search_clicks_impressions_trend
+    tab: search
+    title: "Clicks vs Impressions Over Time"
+    chart_type: line
+    x_col: date
+    y_cols: [clicks, impressions]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        SUM(Clicks) AS clicks,
+        SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: search_spend_trend
+    tab: search
+    title: "Search Spend Over Time"
+    chart_type: area
+    x_col: date
+    y_cols: [spend]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: search_cpc_trend
+    tab: search
+    title: "CPC Over Time"
+    chart_type: line
+    x_col: date
+    y_cols: [avg_cpc]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS avg_cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: search_ctr_trend
+    tab: search
+    title: "CTR Over Time"
+    chart_type: line
+    x_col: date
+    y_cols: [ctr]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  # ── Distribution charts ───────────────────────────────────────────────────────
+
+  - id: search_clicks_by_campaign
+    tab: search
+    title: "Clicks by Campaign"
+    chart_type: bar
+    x_col: campaign_name
+    y_cols: [clicks]
+    sql: |
+      SELECT
+        Campaign_New AS campaign_name,
+        SUM(Clicks) AS clicks
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+      GROUP BY Campaign_New
+      ORDER BY clicks DESC
+      LIMIT 15
+
+  - id: search_spend_by_campaign
+    tab: search
+    title: "Spend by Campaign"
+    chart_type: bar
+    x_col: campaign_name
+    y_cols: [spend]
+    sql: |
+      SELECT
+        Campaign_New AS campaign_name,
+        ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+      GROUP BY Campaign_New
+      ORDER BY spend DESC
+      LIMIT 15
+
+  # ── Summary table ─────────────────────────────────────────────────────────────
+
+  - id: search_campaign_table
+    tab: search
+    title: "Campaign Performance Summary"
+    chart_type: table
+    column_formats:
+      spend: currency
+      ctr: percent
+      avg_cpc: currency
+      impressions: number
+      clicks: number
+    sql: |
+      SELECT
+        Campaign_New AS campaign,
+        SUM(Impressions) AS impressions,
+        SUM(Clicks) AS clicks,
+        ROUND(SUM(Cost), 2) AS spend,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS avg_cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Search`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          '2026 - Corporate Brand Campaign - Keyword',
+          'Brookfield Brand Campaign - Search keyword'
+        )
+      GROUP BY Campaign_New
+      ORDER BY spend DESC
+      LIMIT 20
+
+
+  # ============================================================================
+  # SOCIAL
+  # Filter: Data_Source_name IN ('Brookfield Brand Campaign - Standard',
+  #                              'Brookfield - Ad Account - Campaign')
+  # ============================================================================
+
+  # ── Scorecards ───────────────────────────────────────────────────────────────
+
+  - id: social_impressions
+    tab: social
+    title: "Social Impressions"
+    chart_type: scorecard
+    metric_col: impressions
+    sql: |
+      SELECT SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+
+  - id: social_clicks
+    tab: social
+    title: "Social Clicks"
+    chart_type: scorecard
+    metric_col: clicks
+    sql: |
+      SELECT SUM(Clicks) AS clicks
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+
+  - id: social_ctr
+    tab: social
+    title: "Social CTR"
+    chart_type: scorecard
+    metric_col: ctr
+    format: percent
+    sql: |
+      SELECT ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+
+  - id: social_spend
+    tab: social
+    title: "Social Spend"
+    chart_type: scorecard
+    metric_col: spend
+    format: currency
+    sql: |
+      SELECT ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+
+  - id: social_avg_cpc
+    tab: social
+    title: "Avg CPC"
+    chart_type: scorecard
+    metric_col: avg_cpc
+    format: currency
+    sql: |
+      SELECT ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS avg_cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+
+  # ── Trend charts ─────────────────────────────────────────────────────────────
+
+  - id: social_clicks_impressions_trend
+    tab: social
+    title: "Clicks & Impressions Over Time"
+    chart_type: line
+    x_col: date
+    y_cols: [clicks, impressions]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        SUM(Clicks) AS clicks,
+        SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: social_spend_trend
+    tab: social
+    title: "Social Spend Over Time"
+    chart_type: area
+    x_col: date
+    y_cols: [spend]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: social_ctr_trend
+    tab: social
+    title: "CTR Over Time"
+    chart_type: line
+    x_col: date
+    y_cols: [ctr]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  # ── Distribution charts ───────────────────────────────────────────────────────
+
+  - id: social_impressions_by_platform
+    tab: social
+    title: "Impressions by Platform"
+    chart_type: stacked_bar
+    x_col: platform
+    y_cols: [impressions, clicks]
+    sql: |
+      SELECT
+        Data_Source_name AS platform,
+        SUM(Impressions) AS impressions,
+        SUM(Clicks) AS clicks
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+      GROUP BY Data_Source_name
+      ORDER BY impressions DESC
+
+  - id: social_spend_by_platform
+    tab: social
+    title: "Spend by Platform"
+    chart_type: bar
+    x_col: platform
+    y_cols: [spend]
+    sql: |
+      SELECT
+        Data_Source_name AS platform,
+        ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+      GROUP BY Data_Source_name
+      ORDER BY spend DESC
+
+  # ── Summary table ─────────────────────────────────────────────────────────────
+
+  - id: social_platform_table
+    tab: social
+    title: "Platform Performance Summary"
+    chart_type: table
+    column_formats:
+      spend: currency
+      ctr: percent
+      avg_cpc: currency
+      impressions: number
+      clicks: number
+    sql: |
+      SELECT
+        Data_Source_name AS platform,
+        SUM(Impressions) AS impressions,
+        SUM(Clicks) AS clicks,
+        ROUND(SUM(Cost), 2) AS spend,
+        ROUND(SAFE_DIVIDE(SUM(Clicks), SUM(Impressions)) * 100, 2) AS ctr,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Clicks)), 2) AS avg_cpc
+      FROM `{project}.{dataset}.Brookfield_1H_Social`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source_name IN (
+          'Brookfield Brand Campaign - Standard',
+          'Brookfield - Ad Account - Campaign'
+        )
+      GROUP BY Data_Source_name
+      ORDER BY spend DESC
+
+
+  # ============================================================================
+  # PROGRAMMATIC
+  # Filter: Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+  # ============================================================================
+
+  # ── Scorecards ───────────────────────────────────────────────────────────────
+
+  - id: prog_impressions
+    tab: programmatic
+    title: "Programmatic Impressions"
+    chart_type: scorecard
+    metric_col: impressions
+    sql: |
+      SELECT SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+
+  - id: prog_clicks
+    tab: programmatic
+    title: "Programmatic Clicks"
+    chart_type: scorecard
+    metric_col: clicks
+    sql: |
+      SELECT SUM(Clicks) AS clicks
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+
+  - id: prog_avg_cpm
+    tab: programmatic
+    title: "Avg CPM"
+    chart_type: scorecard
+    metric_col: avg_cpm
+    format: currency
+    sql: |
+      SELECT ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Impressions)) * 1000, 2) AS avg_cpm
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+
+  - id: prog_cpv
+    tab: programmatic
+    title: "Avg CPV"
+    chart_type: scorecard
+    metric_col: avg_cpv
+    format: currency
+    sql: |
+      SELECT ROUND(
+        SAFE_DIVIDE(SUM(Cost), SUM(Video_Completed_Views__Display__Video_360)), 2
+      ) AS avg_cpv
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+
+  - id: prog_spend
+    tab: programmatic
+    title: "Programmatic Spend"
+    chart_type: scorecard
+    metric_col: spend
+    format: currency
+    sql: |
+      SELECT ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+
+  - id: prog_total_video_views
+    tab: programmatic
+    title: "Video Completed Views"
+    chart_type: scorecard
+    metric_col: video_views
+    sql: |
+      SELECT SUM(Video_Completed_Views__Display__Video_360) AS video_views
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+
+  # ── Trend charts ─────────────────────────────────────────────────────────────
+
+  - id: prog_impressions_trend
+    tab: programmatic
+    title: "Impressions Over Time"
+    chart_type: line
+    x_col: date
+    y_cols: [impressions]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: prog_spend_trend
+    tab: programmatic
+    title: "Spend Over Time"
+    chart_type: area
+    x_col: date
+    y_cols: [spend]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: prog_cpm_trend
+    tab: programmatic
+    title: "CPM Over Time"
+    chart_type: line
+    x_col: date
+    y_cols: [avg_cpm]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Impressions)) * 1000, 2) AS avg_cpm
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  - id: prog_video_views_trend
+    tab: programmatic
+    title: "Video Completed Views Over Time"
+    chart_type: line
+    x_col: date
+    y_cols: [video_views]
+    sql: |
+      SELECT
+        DATE(Date) AS date,
+        SUM(Video_Completed_Views__Display__Video_360) AS video_views
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+      GROUP BY DATE(Date)
+      ORDER BY date
+
+  # ── Distribution charts ───────────────────────────────────────────────────────
+
+  - id: prog_spend_by_channel
+    tab: programmatic
+    title: "Spend by Channel (DV360)"
+    chart_type: bar
+    x_col: dv360_channel
+    y_cols: [spend]
+    sql: |
+      SELECT
+        Channels_DV360 AS dv360_channel,
+        ROUND(SUM(Cost), 2) AS spend
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+      GROUP BY Channels_DV360
+      ORDER BY spend DESC
+
+  - id: prog_cpm_by_channel
+    tab: programmatic
+    title: "Avg CPM by Channel"
+    chart_type: bar
+    x_col: dv360_channel
+    y_cols: [avg_cpm]
+    sql: |
+      SELECT
+        Channels_DV360 AS dv360_channel,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Impressions)) * 1000, 2) AS avg_cpm
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+      GROUP BY Channels_DV360
+      ORDER BY avg_cpm DESC
+
+  - id: prog_impressions_by_channel
+    tab: programmatic
+    title: "Impressions by Channel"
+    chart_type: bar
+    x_col: dv360_channel
+    y_cols: [impressions]
+    sql: |
+      SELECT
+        Channels_DV360 AS dv360_channel,
+        SUM(Impressions) AS impressions
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+      GROUP BY Channels_DV360
+      ORDER BY impressions DESC
+
+  # ── Summary table ─────────────────────────────────────────────────────────────
+
+  - id: prog_channel_table
+    tab: programmatic
+    title: "Channel Performance Summary"
+    chart_type: table
+    column_formats:
+      spend: currency
+      avg_cpm: currency
+      avg_cpv: currency
+      impressions: number
+      clicks: number
+      video_views: number
+    sql: |
+      SELECT
+        Channels_DV360 AS channel,
+        SUM(Impressions) AS impressions,
+        SUM(Clicks) AS clicks,
+        ROUND(SUM(Cost), 2) AS spend,
+        ROUND(SAFE_DIVIDE(SUM(Cost), SUM(Impressions)) * 1000, 2) AS avg_cpm,
+        SUM(Video_Completed_Views__Display__Video_360) AS video_views,
+        ROUND(
+          SAFE_DIVIDE(SUM(Cost), SUM(Video_Completed_Views__Display__Video_360)), 2
+        ) AS avg_cpv
+      FROM `{project}.{dataset}.Brookfield_1H_Programmatic`
+      WHERE DATE(Date) BETWEEN '{start_date}' AND '{end_date}'
+        AND Data_Source = 'doubleclick_bidmanager_api:e6b3648e-2446-48ae-9031-9316e1113d86'
+      GROUP BY Channels_DV360
+      ORDER BY spend DESC

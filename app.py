@@ -11,8 +11,27 @@ What's different vs v1:
   * st.metric cards are styled via streamlit-extras for a tighter look.
 """
 
+import os
+import base64
 from dotenv import load_dotenv
 load_dotenv()  # loads GCP_PROJECT_ID and BQ_DATASET from .env
+
+# ── Credentials bootstrap ─────────────────────────────────────────────────────
+# Mirrors the standalone chatbot pattern. On Cloud Run, reads a base64-encoded
+# SA key and writes it to a temp file so all google_auth_default() calls across
+# the process (chatbot agent, insights) automatically use the same credentials.
+# Locally, falls through to ADC (gcloud auth application-default login).
+encoded_credentials = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_FUNNEL_DATA_BASE64")
+if encoded_credentials:
+    decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
+    with open("/tmp/sa_key.json", "w") as f:
+        f.write(decoded_credentials)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/sa_key.json"
+# else: no base64 key → ADC picks up credentials automatically (local dev)
+
+os.environ["GOOGLE_CLOUD_PROJECT"]      = "generative-insights-poc-bi"
+os.environ["GOOGLE_CLOUD_LOCATION"]     = "us-central1"
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
 
 import streamlit as st
 import streamlit.components.v1 as components

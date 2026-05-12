@@ -1,0 +1,12 @@
+google-adk
+google-cloud-bigquery
+google-cloud-aiplatform
+google-cloud-storage>=2.18.0
+google-cloud-speech
+streamlit
+streamlit-mic-recorder
+plotly
+python-dateutil
+python-dotenv
+db-dtypes
+pandas
