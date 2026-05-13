@@ -55,6 +55,30 @@ def _hex_to_rgba(hex_color: str, alpha: float = 0.15) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
+def _fmt_abbrev(value, prefix: str = "") -> str:
+    """Abbreviate a large number to K / M / B with 1 decimal place.
+
+    Examples:
+        312_345_345  → '$312.3M'  (with prefix='$')
+        1_500_000    → '1.5M'
+        45_000       → '45.0K'
+        999          → '999.0'
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    abs_v = abs(v)
+    if abs_v >= 1_000_000_000:
+        return f"{prefix}{v / 1_000_000_000:.1f}B"
+    elif abs_v >= 1_000_000:
+        return f"{prefix}{v / 1_000_000:.1f}M"
+    elif abs_v >= 1_000:
+        return f"{prefix}{v / 1_000:.1f}K"
+    else:
+        return f"{prefix}{v:,.1f}"
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # PUBLIC — figure builder (returns Figure or None)
 # ══════════════════════════════════════════════════════════════════════════
@@ -106,11 +130,11 @@ def render_scorecard(chart_config: dict, data: dict) -> None:
     fmt      = chart_config.get("format", "number")
 
     if fmt == "currency":
-        display = f"${current:,.0f}" if current >= 1000 else f"${current:,.2f}"
+        display = _fmt_abbrev(current, prefix="$")
     elif fmt == "percent":
         display = f"{current:.2f}%"
     else:
-        display = f"{current:,.0f}"
+        display = _fmt_abbrev(current)
 
     delta_str = f"{delta_pct:+.1f}% vs prior period"
     st.metric(label=chart_config.get("title", ""), value=display, delta=delta_str)
@@ -209,11 +233,13 @@ def _build_area(cfg: dict, df: pd.DataFrame) -> go.Figure:
 def _build_bar(cfg: dict, df: pd.DataFrame) -> go.Figure:
     x_col  = cfg.get("x_col", df.columns[0])
     y_cols = cfg.get("y_cols", [df.columns[1]])
+    prefix = "$" if cfg.get("format") == "currency" else ""
 
     fig = go.Figure()
     for i, col in enumerate(y_cols):
         if col not in df.columns:
             continue
+        text_labels = [_fmt_abbrev(v, prefix) for v in df[col]]
         fig.add_trace(go.Bar(
             x=df[x_col],
             y=df[col],
@@ -221,8 +247,8 @@ def _build_bar(cfg: dict, df: pd.DataFrame) -> go.Figure:
             marker_color=PALETTE[i % len(PALETTE)],
             marker_line_color="#000000",
             marker_line_width=0.5,
-            text=df[col],
-            texttemplate="%{text:,.0f}",
+            text=text_labels,
+            texttemplate="%{text}",
             textposition="outside",
             textfont=dict(family="Kanit, sans-serif", size=11, color="#000000"),
         ))

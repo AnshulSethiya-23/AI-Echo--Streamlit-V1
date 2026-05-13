@@ -23,17 +23,6 @@ from agent import chat, create_session   # noqa: E402
 from charts import ai_chart              # noqa: E402
 
 
-# ── Example questions shown as quick-action buttons ───────────
-_EXAMPLES = [
-    "How did Search perform last month vs the month before?",
-    "Show social spend trend over the last 3 months",
-    "Compare Brand vs NonBrand CTR for the last quarter",
-    "Which programmatic campaigns had the highest CPM last month?",
-    "Top 10 keywords by internal link clicks in the last month?",
-    "Show a chart of monthly impressions by channel",
-]
-
-
 # ── Minimal scoped CSS (tool badges only — global styles live in main app) ──
 _TAB_CSS = """
 <style>
@@ -92,33 +81,23 @@ def render(start_date: str, end_date: str) -> None:
     if "chatbot_messages" not in st.session_state:
         st.session_state.chatbot_messages = []
 
+    # ── Handle new-chat request from sidebar button ─────────
+    # The sidebar button triggers a full rerun; we catch the flag here.
+    if st.session_state.pop("chatbot_new_chat_requested", False):
+        st.session_state.chatbot_messages   = []
+        st.session_state.chatbot_user_id    = str(uuid.uuid4())
+        st.session_state.chatbot_session_id = str(uuid.uuid4())
+        create_session(
+            st.session_state.chatbot_user_id,
+            st.session_state.chatbot_session_id,
+        )
+
+    # ── Read Show SQL toggle value from sidebar ─────────────
+    show_sql = st.session_state.get("chatbot_show_sql", False)
+
     # ── Header ─────────────────────────────────────────────
     st.subheader("Ask Your Data")
-    st.caption(
-        f"Conversational analytics powered by Google ADK + Gemini on Vertex AI · "
-        f"Reporting period: **{start_date}** to **{end_date}**"
-    )
-
-    # ── Controls row (Show SQL + New Chat) ─────────────────
-    ctrl_left, ctrl_mid, ctrl_right = st.columns([3, 1, 1])
-    with ctrl_left:
-        st.markdown(
-            "<div style='font-size:12px; color:#475657; padding-top:6px;'>"
-            "Ask questions about campaign performance in plain English.</div>",
-            unsafe_allow_html=True,
-        )
-    with ctrl_mid:
-        show_sql = st.toggle("Show SQL", value=False, key="chatbot_show_sql")
-    with ctrl_right:
-        if st.button("🗑️ New chat", width='stretch', key="chatbot_new_chat"):
-            st.session_state.chatbot_messages   = []
-            st.session_state.chatbot_user_id    = str(uuid.uuid4())
-            st.session_state.chatbot_session_id = str(uuid.uuid4())
-            create_session(
-                st.session_state.chatbot_user_id,
-                st.session_state.chatbot_session_id,
-            )
-            st.rerun(scope="fragment")
+    st.caption("Conversational analytics powered by Google ADK + Gemini on Vertex AI")
 
     st.markdown(
         "<hr style='border:none; border-top:2px solid #FFDD33; margin:8px 0 12px 0;'/>",
@@ -156,20 +135,6 @@ def render(start_date: str, end_date: str) -> None:
                 # Chart
                 if msg.get("fig") is not None:
                     st.plotly_chart(msg["fig"], width='stretch')
-
-    # ── Example question buttons (shown only when no messages yet) ────────
-    if not st.session_state.chatbot_messages:
-        st.markdown(
-            "<div style='font-size:13px; font-weight:600; color:#000; "
-            "margin-bottom:8px;'>Try asking:</div>",
-            unsafe_allow_html=True,
-        )
-        cols = st.columns(2)
-        for i, q in enumerate(_EXAMPLES):
-            with cols[i % 2]:
-                if st.button(q, key=f"chatbot_ex_{i}", width='stretch'):
-                    st.session_state.chatbot_pending = q
-        st.markdown("<br/>", unsafe_allow_html=True)
 
     # ── Chat input ─────────────────────────────────────────
     pending    = st.session_state.pop("chatbot_pending", None)
@@ -279,5 +244,10 @@ def render(start_date: str, end_date: str) -> None:
             "tool_calls": result.get("tool_calls", []),
             "fig":        fig,
         })
-        # Re-render the fragment so suggestions hide and history renders cleanly
-        st.rerun(scope="fragment")
+        # Re-render so history renders cleanly.
+        # scope="fragment" is only valid during a fragment-triggered rerun;
+        # fall back to a full rerun when the trigger came from the sidebar.
+        try:
+            st.rerun(scope="fragment")
+        except Exception:
+            st.rerun()

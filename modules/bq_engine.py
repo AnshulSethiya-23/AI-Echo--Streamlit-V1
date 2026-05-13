@@ -54,6 +54,19 @@ def run_query(
         return pd.DataFrame()
 
 
+def _safe_float(val) -> float:
+    """Convert val to float safely, returning 0.0 for pd.NA / None / non-numeric."""
+    try:
+        if pd.isna(val):
+            return 0.0
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def run_query_with_delta(
     sql_template: str,
@@ -82,8 +95,8 @@ def run_query_with_delta(
         dataset,
     )
 
-    current_val = float(df_current[metric_col].iloc[0]) if not df_current.empty else 0.0
-    previous_val = float(df_previous[metric_col].iloc[0]) if not df_previous.empty else 0.0
+    current_val  = _safe_float(df_current[metric_col].iloc[0])  if not df_current.empty  else 0.0
+    previous_val = _safe_float(df_previous[metric_col].iloc[0]) if not df_previous.empty else 0.0
 
     if previous_val and previous_val != 0:
         delta_pct = round(((current_val - previous_val) / previous_val) * 100, 1)

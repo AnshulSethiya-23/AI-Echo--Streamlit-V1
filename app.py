@@ -236,8 +236,9 @@ components.html(
             '[data-testid="collapsedControl"]',
         ].join(',');
 
-        // Regex for known Material Icons ligature names (snake_case, no spaces)
-        var ICON_TEXT_RE = /^(keyboard_arrow|keyboard_double_arrow|arrow_drop|arrow_forward|arrow_back|arrow_right|arrow_left|arrow_upward|arrow_downward|expand_more|expand_less|chevron_right|chevron_left|more_vert|fullscreen_|unfold_|navigate_|first_page|last_page)/;
+        // Regex for known Material Icons ligature names (snake_case, no spaces).
+        // Includes chat-avatar icons: "face" (user) and "smart_toy" / "art_" (assistant).
+        var ICON_TEXT_RE = /^(keyboard_arrow|keyboard_double_arrow|arrow_drop|arrow_forward|arrow_back|arrow_right|arrow_left|arrow_upward|arrow_downward|expand_more|expand_less|chevron_right|chevron_left|more_vert|fullscreen_|unfold_|navigate_|first_page|last_page|face|smart_toy|art_|person|account_circle|psychology|sentiment_)/ ;
 
         function scanTextNodes() {
             var walker = p.createTreeWalker(
@@ -280,6 +281,66 @@ components.html(
 )
 
 
+# ── JS: tab-aware sidebar sections ───────────────────────────────────────────
+# Three sections are toggled based on the active tab index:
+#   Date filter   (filter-start / filter-end)   → visible on tabs 0-3, 6, 7
+#   Insights      (insights-start / insights-end) → visible only on tab 4
+#   Chatbot       (chatbot-start / chatbot-end)   → visible only on tab 5
+components.html(
+    """
+    <script>
+    (function() {
+        var p = window.parent.document;
+
+        function toggleSection(startAttr, endAttr, show) {
+            var startEl = p.querySelector('[data-bl="' + startAttr + '"]');
+            var endEl   = p.querySelector('[data-bl="' + endAttr   + '"]');
+            if (!startEl || !endEl) return;
+
+            var sidebarContent = p.querySelector('[data-testid="stSidebarContent"]');
+            if (!sidebarContent) return;
+            var topBlock = sidebarContent.querySelector('[data-testid="stVerticalBlock"]');
+            if (!topBlock) return;
+
+            var children   = Array.from(topBlock.children);
+            var startChild = children.find(function(c) { return c.contains(startEl); });
+            var endChild   = children.find(function(c) { return c.contains(endEl);   });
+            if (!startChild || !endChild) return;
+
+            var s = children.indexOf(startChild);
+            var e = children.indexOf(endChild);
+            if (s < 0 || e < 0) return;
+
+            children.slice(s, e + 1).forEach(function(child) {
+                child.style.setProperty('display', show ? '' : 'none', 'important');
+            });
+        }
+
+        function updateSidebar() {
+            var tabs = p.querySelectorAll('[data-baseweb="tab"]');
+            var activeIdx = -1;
+            tabs.forEach(function(t, i) {
+                if (t.getAttribute('aria-selected') === 'true') activeIdx = i;
+            });
+            if (activeIdx === -1) activeIdx = 0; // default: Executive Summary
+
+            toggleSection('filter-start',   'filter-end',   activeIdx !== 4 && activeIdx !== 5);
+            toggleSection('insights-start', 'insights-end', activeIdx === 4);
+            toggleSection('chatbot-start',  'chatbot-end',  activeIdx === 5);
+        }
+
+        updateSidebar();
+        new MutationObserver(updateSidebar).observe(
+            p.documentElement, { childList: true, subtree: true }
+        );
+    })();
+    </script>
+    """,
+    height=0,
+    scrolling=False,
+)
+
+
 # Sidebar ---------------------------------------------------------------------
 with st.sidebar:
     # BL logo
@@ -288,6 +349,8 @@ with st.sidebar:
         width=140,
     )
     st.markdown("---")
+    # ── Sentinel: JS uses this to find the start of the date-filter block ──
+    st.markdown('<span data-bl="filter-start" style="display:none"></span>', unsafe_allow_html=True)
     st.markdown("### Filters")
 
     today = date.today()
@@ -367,6 +430,87 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
+    # ── Sentinel: JS uses this to find the end of the date-filter block ──
+    st.markdown('<span data-bl="filter-end" style="display:none"></span>', unsafe_allow_html=True)
+
+
+# ── Insights filters sidebar section ─────────────────────────────────────────
+_INSIGHT_CHANNEL_ORDER = ["executive", "Search", "Social", "programmatic"]
+_INSIGHT_CHANNEL_LABELS = {
+    "executive":    "📊 Executive Summary",
+    "Search":       "🔍 Search",
+    "Social":       "📣 Social",
+    "programmatic": "🖥️ Programmatic",
+}
+
+with st.sidebar:
+    st.markdown('<span data-bl="insights-start" style="display:none"></span>', unsafe_allow_html=True)
+    st.markdown("### 💡 Insights Filters")
+
+    st.selectbox(
+        "Comparison type",
+        options=["All", "MoM", "QoQ", "YoY"],
+        index=1,
+        key="insights_comp_type",
+        help="Filter insights by period comparison.",
+    )
+    st.selectbox(
+        "Channel",
+        options=["All"] + _INSIGHT_CHANNEL_ORDER,
+        format_func=lambda c: _INSIGHT_CHANNEL_LABELS.get(c, c) if c != "All" else "All Channels",
+        key="insights_channel",
+        help="Filter by a specific channel.",
+    )
+
+    # Run-date options are populated by the tab fragment after its BQ call.
+    # On first load only "Latest" is available; options expand on the next rerun.
+    _run_date_opts = ["Latest"] + st.session_state.get("insights_run_dates_options", [])
+    # Guard: if a previously stored value is no longer in the new option list, reset.
+    if st.session_state.get("insights_run_date", "Latest") not in _run_date_opts:
+        st.session_state["insights_run_date"] = "Latest"
+    st.selectbox(
+        "Report date",
+        options=_run_date_opts,
+        key="insights_run_date",
+        help="Select a specific insight generation date, or Latest.",
+    )
+
+    st.markdown('<span data-bl="insights-end" style="display:none"></span>', unsafe_allow_html=True)
+
+
+# ── Chatbot suggestions sidebar section ───────────────────────────────────────
+_CHATBOT_SIDEBAR_EXAMPLES = [
+    "How did Search perform last month vs the month before?",
+    "Show social spend trend over the last 3 months",
+    "Compare Brand vs NonBrand CTR for the last quarter",
+    "Which programmatic campaigns had the highest CPM last month?",
+    "Top 10 keywords by internal link clicks in the last month?",
+    "Show a chart of monthly impressions by channel",
+]
+
+with st.sidebar:
+    st.markdown('<span data-bl="chatbot-start" style="display:none"></span>', unsafe_allow_html=True)
+    st.markdown("### 🤖 Try Asking")
+    st.markdown(
+        "<div style='font-size:12px; color:#000; opacity:0.65; margin-bottom:8px;'>"
+        "Click a question to send it to the chatbot.</div>",
+        unsafe_allow_html=True,
+    )
+    for i, q in enumerate(_CHATBOT_SIDEBAR_EXAMPLES):
+        if st.button(q, key=f"sidebar_chatbot_ex_{i}", width="stretch"):
+            st.session_state.chatbot_pending = q
+
+    st.divider()
+
+    # Controls that used to live in the tab header
+    _sb_c1, _sb_c2 = st.columns(2)
+    with _sb_c1:
+        st.toggle("Show SQL", value=False, key="chatbot_show_sql")
+    with _sb_c2:
+        if st.button("🗑️ New chat", width="stretch", key="sidebar_chatbot_new_chat"):
+            st.session_state.chatbot_new_chat_requested = True
+
+    st.markdown('<span data-bl="chatbot-end" style="display:none"></span>', unsafe_allow_html=True)
 
 
 # Header ----------------------------------------------------------------------

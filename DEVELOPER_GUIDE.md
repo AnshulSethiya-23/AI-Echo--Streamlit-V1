@@ -306,9 +306,40 @@ All four source tables are in `{project}.{dataset}` (set via `GCP_PROJECT_ID` an
 
 ---
 
-## 7. Debugging Guide
+## 7. Sidebar Architecture
 
-### 7.1 BigQuery / data errors
+The sidebar has three mutually exclusive sections, each controlled by a client-side JS `MutationObserver`. Only one section is visible at a time, determined by the active tab.
+
+| Section | Visible on | Sentinel attrs |
+|---|---|---|
+| Date filters | All tabs except Insights (4) and Chatbot (5) | `filter-start` / `filter-end` |
+| Insights filters | Insights tab (index 4) | `insights-start` / `insights-end` |
+| Chatbot controls | Chatbot tab (index 5) | `chatbot-start` / `chatbot-end` |
+
+**How it works:**
+The JS in the second `components.html()` block in `app.py` reads `aria-selected` on `[data-baseweb="tab"]` elements to determine the active tab index. It then calls `toggleSection(startAttr, endAttr, show)` which finds all sidebar DOM children between the two sentinel `<span data-bl="...">` elements and sets `display: none` or `display: ''` on them.
+
+**Adding a new sidebar section for a new tab:**
+
+1. In `app.py`, add a `with st.sidebar:` block containing:
+   - An opening sentinel: `st.markdown('<span data-bl="mysection-start" style="display:none"></span>', unsafe_allow_html=True)`
+   - Your sidebar widgets
+   - A closing sentinel: `st.markdown('<span data-bl="mysection-end" style="display:none"></span>', unsafe_allow_html=True)`
+
+2. In the `updateSidebar()` JS function, add a `toggleSection` call for the new tab index:
+   ```javascript
+   toggleSection('mysection-start', 'mysection-end', activeIdx === 6);
+   ```
+
+3. For any widgets moved from a tab into the sidebar: keep the same `key=` so the tab can read the value via `st.session_state.get("my_key", default)` without declaring a second widget.
+
+**Gotcha — `BaseWeb` popover:** Do not add `position: relative` to `[data-baseweb="popover"]` — it breaks dropdown positioning inside the sidebar.
+
+---
+
+## 8. Debugging Guide
+
+### 8.1 BigQuery / data errors
 
 **Symptom:** `st.error("BigQuery error: ...")` shown on the page, or a chart shows "No data available."
 
@@ -319,13 +350,15 @@ All four source tables are in `{project}.{dataset}` (set via `GCP_PROJECT_ID` an
 2. Paste it into the BigQuery console in GCP — replace `{project}`, `{dataset}`, `{start_date}`, `{end_date}` manually
 3. Check: does the table name exist? Is the date range valid? Is `DATE(Date)` needed?
 4. Check `.env` — `GCP_PROJECT_ID` and `BQ_DATASET` must be set correctly
-5. Check authentication — local: ADC (`gcloud auth application-default login`). Cloud Run: service account JSON in `GCP_SERVICE_ACCOUNT_JSON` env var
+5. Check authentication — local: ADC (`gcloud auth application-default login`). Cloud Run: set `GOOGLE_APPLICATION_CREDENTIALS_FUNNEL_DATA_BASE64` in your env (base64-encoded SA key JSON). The `app.py` bootstrap writes it to `/tmp/sa_key.json` at startup, which all GCP clients pick up automatically.
+
+**NAType / null metric values:** BigQuery can return `pd.NA` for null columns. `run_query_with_delta()` handles this via `_safe_float()` in `bq_engine.py`. If you add a new BQ call and see `TypeError: float() argument must be a string or a real number, not 'NAType'`, import and use `_safe_float(val)` when reading numeric values from the DataFrame.
 
 **Cache note:** `run_query` caches results for 1 hour. If you've fixed data and want a fresh result, restart Streamlit (`Ctrl+C` → `streamlit run app.py`) or wait for the cache to expire.
 
 ---
 
-### 7.2 Chart not appearing / wrong chart
+### 8.2 Chart not appearing / wrong chart
 
 **Symptom:** Section header shows but chart is blank, or the wrong chart type renders.
 
@@ -346,7 +379,7 @@ All four source tables are in `{project}.{dataset}` (set via `GCP_PROJECT_ID` an
 
 ---
 
-### 7.3 Scorecard delta showing wrong value
+### 8.3 Scorecard delta showing wrong value
 
 **Symptom:** `st.metric` shows a delta of 0% or an incorrect percentage.
 
@@ -356,9 +389,11 @@ The function automatically computes the prior period as the same length of time 
 
 **Common cause:** The metric column name in the SQL doesn't match `metric_col` in the YAML config. Check both.
 
+**KPI number display:** Large numbers (e.g. `312,345,678`) are automatically shortened to `312.3M` via `_fmt_abbrev()` in `modules/charts.py`. This applies to both scorecard values and bar chart labels. The helper uses a `prefix` arg for currency formatting (`$312.3M`). If you add a new scorecard and the number looks truncated, check that `render_scorecard()` is calling `_fmt_abbrev()` and that your `format` field in the YAML is set correctly (`currency`, `percent`, or `number`).
+
 ---
 
-### 7.4 Heatmap columns in wrong order
+### 8.4 Heatmap columns in wrong order
 
 **Symptom:** Week columns on the heatmap are not chronological, or there are too many columns.
 
@@ -389,7 +424,7 @@ If you see this bug on a new chart, apply the same pattern.
 
 ---
 
-### 7.5 Chatbot not working
+### 8.5 Chatbot not working
 
 **Symptom:** "Agent error" shown in the chatbot tab, or the spinner runs indefinitely.
 
@@ -397,14 +432,16 @@ If you see this bug on a new chart, apply the same pattern.
 
 **Common causes:**
 - `GOOGLE_CLOUD_PROJECT` or ADK credentials not set in `.env`
-- ADK session expired — click the "🗑️ New chat" button to reset
+- ADK session expired — click "🗑️ New chat" in the sidebar to reset
 - The `chat()` function returned a malformed result dict (missing `text`, `df`, or `sql` keys)
 
-**Suggestions showing during active conversation:** This is a Streamlit fragment timing issue. The fix is already applied — `st.rerun(scope="fragment")` at the end of the message handler. If it reappears, check that the `st.rerun()` call is present after the `st.session_state.chatbot_messages.append(...)` block at the bottom of the `question` handler in `tab_chatbot.py`.
+**Chatbot controls location:** The "Show SQL" toggle and "New Chat" button live in the sidebar (Chatbot section), not in the tab itself. The tab reads `show_sql` from `st.session_state.get("chatbot_show_sql", False)`. New Chat sets a `chatbot_new_chat_requested` flag in session state; the tab fragment checks and clears this flag on its next run.
+
+**Material icon text visible in chat bubbles** (e.g. "face", "art_"): These are Material Icons ligature names leaking through when the icon font isn't applied. The JS patch in `app.py` suppresses them via a regex in `scanTextNodes()`. If a new icon name appears, add it to the `ICON_TEXT_RE` pattern in that function.
 
 ---
 
-### 7.6 Forecast tab errors
+### 8.6 Forecast tab errors
 
 **Symptom:** "Forecast failed: ..." error shown after clicking Generate Forecast.
 
@@ -423,7 +460,7 @@ If you see this bug on a new chart, apply the same pattern.
 
 ---
 
-### 7.7 Tab loads slowly
+### 8.7 Tab loads slowly
 
 **Symptom:** The page takes more than a few seconds to load after a date change.
 
@@ -436,20 +473,32 @@ If you see this bug on a new chart, apply the same pattern.
 - Check that `@st.cache_data` is on your `run_query()` call (it is, by default in `bq_engine.py`)
 - Check that you're not calling `run_query()` more times than needed — each unique (sql, start_date, end_date) combination is a separate BQ round-trip
 - Consider adding a BigQuery BI Engine reservation in GCP for sub-second cached queries
+- For first-load parallelism: all BQ queries within a tab currently fire sequentially. Using `concurrent.futures.ThreadPoolExecutor` to fire them in parallel (fetch all, then render) would reduce first-load time from ~sum-of-all-queries to ~slowest-single-query. `@st.cache_data` is thread-safe so there are no race conditions.
 
 ---
 
-### 7.8 Streamlit rerun / infinite loop
+### 8.8 Streamlit rerun / scope errors
 
-**Symptom:** The page keeps reloading, or clicking a button causes unexpected full-page reruns.
+**Symptom:** `StreamlitAPIException: scope="fragment" can only be specified from @st.fragment-decorated functions during fragment reruns.`
 
-**How `@st.fragment` helps:** Each tab's `render()` is decorated with `@st.fragment`. Widget interactions inside a tab (sliders, toggles, dropdowns) only re-render that tab's fragment, not the full page. Date input changes in the sidebar are the only thing that triggers a full-page rerun (by design — they need to propagate to all tabs).
+**Cause:** `st.rerun(scope="fragment")` is only valid when the rerun was triggered *from inside* the fragment (e.g. the user typed in the chat input). When the trigger comes from *outside* the fragment — such as a sidebar button click — Streamlit is doing a full-page rerun and `scope="fragment"` is invalid.
 
-**Common cause:** Using `st.rerun()` without `scope="fragment"` inside a fragment causes a full-page rerun. Always use `st.rerun(scope="fragment")` inside `render()` functions.
+**Fix:** Wrap the rerun call in a try/except:
+
+```python
+try:
+    st.rerun(scope="fragment")
+except Exception:
+    st.rerun()
+```
+
+This is already applied in `tab_chatbot.py`. Apply the same pattern anywhere else you see `st.rerun(scope="fragment")` that might be triggered by a sidebar interaction.
+
+**General rule:** `scope="fragment"` is safe when the only triggers are widgets *inside* the fragment. As soon as sidebar buttons or other outside-fragment interactions can cause a rerun, use the try/except.
 
 ---
 
-## 8. Environment Variables Reference
+## 9. Environment Variables Reference
 
 Set these in `.env` at the project root:
 
@@ -458,8 +507,9 @@ Set these in `.env` at the project root:
 GCP_PROJECT_ID=your-gcp-project-id
 BQ_DATASET=your_dataset_name
 
-# Optional — for Cloud Run / production (leave blank for local ADC)
-GCP_SERVICE_ACCOUNT_JSON={"type": "service_account", ...}
+# Production auth — base64-encode your SA key JSON:
+#   base64 -i sa_key.json | tr -d '\n'
+GOOGLE_APPLICATION_CREDENTIALS_FUNNEL_DATA_BASE64=<base64-string>
 
 # Forecasting — switch to TimesFM when deployed
 FORECAST_BACKEND=prophet            # or: timesfm
@@ -470,7 +520,7 @@ VERTEX_LOCATION=us-central1         # Vertex AI region
 
 ---
 
-## 9. Running Locally
+## 10. Running Locally
 
 ```bash
 # Install dependencies
@@ -490,7 +540,7 @@ The app opens at `http://localhost:8501`.
 
 ---
 
-## 10. Quick Reference — Adding the Most Common Things
+## 11. Quick Reference — Adding the Most Common Things
 
 **New KPI scorecard on the Search tab:**
 → Add a `scorecard` entry in `charts_config.yaml` with `tab: search`. That's it.

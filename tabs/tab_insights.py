@@ -12,6 +12,7 @@ Session-state keys are prefixed with `insights_` to avoid conflicts with
 other dashboard tabs.
 """
 
+import re
 import sys
 import os
 import streamlit as st
@@ -71,6 +72,8 @@ def _render_insight_card(row) -> None:
     curr_lbl  = row.get("current_label", "Current")
     prev_lbl  = row.get("previous_label", "Previous")
     insight   = row.get("insight", "No insight text available.")
+    # Collapse 2+ consecutive blank lines → single newline to avoid huge gaps
+    insight   = re.sub(r'\n{2,}', '\n', insight.strip())
     run_date  = row.get("run_date", "")
 
     header_color = _CHANNEL_COLORS.get(channel, "#eeeeee")
@@ -125,56 +128,24 @@ def render(start_date: str, end_date: str) -> None:
     """Render the Automated Insights tab inside the dashboard."""
 
     st.subheader("Automated Insights")
-    st.caption(
-        f"AI-generated insights from campaign data · "
-        f"Dashboard period: **{start_date}** to **{end_date}**"
-    )
+    st.caption("AI-generated insights from campaign data")
 
     st.markdown(
         "<hr style='border:none; border-top:2px solid #FFDD33; margin:8px 0 16px 0;'/>",
         unsafe_allow_html=True,
     )
 
-    # ── Controls ────────────────────────────────────────────────
-    ctrl1, ctrl2, ctrl3 = st.columns([2, 2, 2])
+    # ── Read filter values from sidebar (widgets live in app.py sidebar) ────────
+    comp_type_sel = st.session_state.get("insights_comp_type", "MoM")
+    channel_sel   = st.session_state.get("insights_channel", "All")
+    run_date_sel  = st.session_state.get("insights_run_date", "Latest")
 
-    with ctrl1:
-        comp_type_sel = st.selectbox(
-            "Comparison type",
-            options=["All", "MoM", "QoQ", "YoY"],
-            index=1,
-            key="insights_comp_type",
-            help="Filter insights by period comparison.",
-        )
-
-    with ctrl2:
-        channel_options = ["All"] + _CHANNEL_ORDER
-        channel_sel = st.selectbox(
-            "Channel",
-            options=channel_options,
-            format_func=lambda c: _CHANNEL_LABELS.get(c, c) if c != "All" else "All Channels",
-            key="insights_channel",
-            help="Filter by a specific channel.",
-        )
-
-    with ctrl3:
-        # Run-date picker — load available dates from BQ
-        with st.spinner("Loading run dates..."):
-            available_dates = _cached_run_dates()
-
-        if available_dates:
-            date_options = ["Latest"] + available_dates
-            run_date_sel = st.selectbox(
-                "Report date",
-                options=date_options,
-                key="insights_run_date",
-                help="Select a specific insight generation date, or Latest.",
-            )
-        else:
-            run_date_sel = "Latest"
-            st.info("No run dates found in BigQuery — generate insights first.")
-
-    st.markdown("<br/>", unsafe_allow_html=True)
+    # Fetch available run dates and push them to the sidebar selectbox options.
+    # The sidebar renders before this fragment, so the dates become available on
+    # the following rerun (one-rerun delay — "Latest" is always a valid default).
+    available_dates = _cached_run_dates()
+    if available_dates:
+        st.session_state["insights_run_dates_options"] = available_dates
 
     # ── Resolve filter values ────────────────────────────────────
     comp_type_arg  = None if comp_type_sel  == "All"    else comp_type_sel
