@@ -56,7 +56,7 @@ from tabs import (
 
 # Page config -----------------------------------------------------------------
 st.set_page_config(
-    page_title="Brookfield Dashboard v2",
+    page_title="Client Dashboard v2",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -405,7 +405,7 @@ with st.sidebar:
 
     st.divider()
     st.markdown(
-        "<div style='font-family:Kanit,sans-serif;font-size:12px;color:#000000;opacity:0.6;'>Powered by <strong>brainlabs</strong> × Brookfield</div>",
+        "<div style='font-family:Kanit,sans-serif;font-size:12px;color:#000000;opacity:0.6;'>Powered by <strong>brainlabs</strong> × Client_Name </div>",
         unsafe_allow_html=True,
     )
 
@@ -514,7 +514,7 @@ with st.sidebar:
 
 
 # Header ----------------------------------------------------------------------
-st.title("Brookfield Performance Dashboard")
+st.title("Client Performance Dashboard")
 st.caption(f"Showing data from **{start_str}** to **{end_str}**  ·  v2")
 
 
